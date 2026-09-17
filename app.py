@@ -4,45 +4,44 @@ import sqlite3
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import os
-import streamlit as st
+from openai import OpenAI
 
-# Пытаемся взять ключи из секретов Streamlit Cloud, иначе — из локального окружения
+# ============================================================
+# 1. ПОЛУЧЕНИЕ КЛЮЧЕЙ (работает и локально, и на Cloud)
+# ============================================================
+
+# На Streamlit Cloud ключи лежат в st.secrets
+# Локально — в переменных окружения из .env
 try:
     api_key = st.secrets["OPENAI_API_KEY"]
     base_url = st.secrets.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
     model_name = st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")
 except (KeyError, FileNotFoundError):
-    # Локальная разработка
-    from dotenv import load_dotenv
-    load_dotenv()
+    # Локальный запуск: ключи из .env через python-dotenv
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
     api_key = os.getenv("OPENAI_API_KEY")
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-# Теперь используем эти переменные
+if not api_key:
+    st.error(
+        "❌ Не найден OPENAI_API_KEY.\n\n"
+        "**На Streamlit Cloud:** добавь его в Manage app → Settings → Secrets.\n\n"
+        "**Локально:** создай файл `.env` с ключом."
+    )
+    st.stop()
+
 client = OpenAI(api_key=api_key, base_url=base_url)
 MODEL = model_name
-from openai import OpenAI
-
-# ============================================================
-# 1. НАСТРОЙКА
-# ============================================================
-
-
-
-client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-)
-MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 DB = "progress.db"
 
-st.set_page_config(page_title="Тема за 7 дней · AI", page_icon="🧠", layout="wide")
-
 
 # ============================================================
-# 2. БАЗА ДАННЫХ
+# 2. БАЗА ДАННЫХ (SQLite)
 # ============================================================
 
 def init_db():
@@ -155,7 +154,7 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
 
 def build_plan(topic: str, grade: int, days: int = 7) -> dict:
     """Составляет план курса на N дней."""
-    prompt = f"""Составь учебный план по теме "{topic}" для ученика {grade} класса.
+    prompt = f"Составь учебный план по теме "{topic}" для ученика {grade} класса.
 Курс рассчитан на {days} дней, по 20–30 минут в день.
 
 Верни строго JSON:
@@ -232,6 +231,7 @@ def check_explanation(topic: str, student_text: str) -> dict:
 # 4. ИНТЕРФЕЙС
 # ============================================================
 
+st.set_page_config(page_title="Тема за 7 дней · AI", page_icon="🧠", layout="wide")
 init_db()
 
 st.title("🧠 Тема за 7 дней · AI-версия")
