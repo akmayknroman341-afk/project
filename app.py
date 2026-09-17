@@ -154,7 +154,7 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
 
 def build_plan(topic: str, grade: int, days: int = 7) -> dict:
     """Составляет план курса на N дней."""
-    prompt = f"Составь учебный план по теме "{topic}" для ученика {grade} класса.
+    prompt = f"""Составь учебный план по теме «{topic}» для ученика {grade} класса.
 Курс рассчитан на {days} дней, по 20–30 минут в день.
 
 Верни строго JSON:
