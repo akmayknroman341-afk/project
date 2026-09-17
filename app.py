@@ -4,14 +4,32 @@ import sqlite3
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from dotenv import load_dotenv
+import os
+import streamlit as st
+
+# Пытаемся взять ключи из секретов Streamlit Cloud, иначе — из локального окружения
+try:
+    api_key = st.secrets["OPENAI_API_KEY"]
+    base_url = st.secrets.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    model_name = st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")
+except (KeyError, FileNotFoundError):
+    # Локальная разработка
+    from dotenv import load_dotenv
+    load_dotenv()
+    api_key = os.getenv("OPENAI_API_KEY")
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+# Теперь используем эти переменные
+client = OpenAI(api_key=api_key, base_url=base_url)
+MODEL = model_name
 from openai import OpenAI
 
 # ============================================================
 # 1. НАСТРОЙКА
 # ============================================================
 
-load_dotenv()
+
 
 client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
