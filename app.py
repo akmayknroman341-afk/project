@@ -4,38 +4,29 @@ import sqlite3
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from openai import OpenAI
+from groq import Groq
 
 # ============================================================
 # 1. ПОЛУЧЕНИЕ КЛЮЧЕЙ (работает и локально, и на Cloud)
 # ============================================================
 
-# На Streamlit Cloud ключи лежат в st.secrets
-# Локально — в переменных окружения из .env
 try:
     api_key = st.secrets["OPENAI_API_KEY"]
-    base_url = st.secrets.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    model_name = st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")
+    model_name = st.secrets.get("OPENAI_MODEL", "llama-3.3-70b-versatile")
 except (KeyError, FileNotFoundError):
-    # Локальный запуск: ключи из .env через python-dotenv
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except ImportError:
         pass
     api_key = os.getenv("OPENAI_API_KEY")
-    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    model_name = os.getenv("OPENAI_MODEL", "llama-3.3-70b-versatile")
 
 if not api_key:
-    st.error(
-        "❌ Не найден OPENAI_API_KEY.\n\n"
-        "**На Streamlit Cloud:** добавь его в Manage app → Settings → Secrets.\n\n"
-        "**Локально:** создай файл `.env` с ключом."
-    )
+    st.error("❌ Не найден OPENAI_API_KEY. Добавь его в Secrets на Streamlit Cloud или в .env локально.")
     st.stop()
 
-client = OpenAI(api_key=api_key, base_url=base_url)
+client = Groq(api_key=api_key)
 MODEL = model_name
 DB = "progress.db"
 
