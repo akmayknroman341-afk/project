@@ -161,7 +161,7 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
 
 def build_plan(topic: str, grade: int, days: int = 7) -> dict:
     """Составляет план курса на N дней."""
-    prompt = f'Составь учебный план по теме «{topic}» для ученика {grade} класса.
+    prompt = f"""Составь учебный план по теме «{topic}» для ученика {grade} класса.
 Курс рассчитан на {days} дней, по 20–30 минут в день.
 
 Формат ответа — строго JSON:
@@ -185,7 +185,7 @@ def build_plan(topic: str, grade: int, days: int = 7) -> dict:
 
 В каждом дне ровно 3 задачи. Задачи — разные по сложности.
 Все ответы — точные, проверяемые. Без воды.
-Ответь ТОЛЬКО валидным JSON, без комментариев.'
+Ответь ТОЛЬКО валидным JSON, без комментариев."""
     return ai_json(prompt)
 
 
@@ -206,7 +206,6 @@ def generate_task(topic: str, day_title: str, goal: str,
 
 Ответь ТОЛЬКО валидным JSON."""
     return ai_json(prompt)
-
 
 def check_answer_ai(topic: str, question: str, correct: str, given: str) -> dict:
     """Проверяет ответ, допуская разные формы записи."""
