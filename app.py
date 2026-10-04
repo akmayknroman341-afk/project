@@ -121,49 +121,66 @@ def get_progress(student, topic):
 # 3. AI-ФУНКЦИИ
 # ============================================================
 
+import re
+import time
+
 def ai_json(prompt: str, system: str = "Ты — опытный школьный учитель.",
             retries: int = 3) -> dict:
-    """Запрос к LLM с гарантией JSON-ответа, ремонтом и повторами."""
+    """Запрос к LLM с гарантией JSON-ответа, обходом багов Groq и повторами."""
     last_err = None
     for attempt in range(retries):
         try:
-            response = client.chat.completions.create(
-                model=MODEL,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.1,          # КРИТИЧНО для Groq [citation:14]
-                max_tokens=4000,          # Чтобы JSON не обрезался [citation:14]
-            )
-            
-            # 1. Проверка на обрыв ответа (очень важно!)
+            # --- Попытка №1: используем встроенный JSON-режим ---
+            if attempt == 0:
+                response = client.chat.completions.create(
+                    model=MODEL,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": prompt},
+                    ],
+                    response_format={"type": "json_object"},  # Пытаемся включить JSON
+                    temperature=0.1,
+                    max_tokens=4000,
+                )
+            # --- Попытка №2+: если Groq ругается, убираем response_format ---
+            else:
+                # Некоторые модели Groq не поддерживают response_format [citation:2][citation:5]
+                # В этом случае просто просим JSON в промпте
+                response = client.chat.completions.create(
+                    model=MODEL,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": prompt + "\n\nОтветь ТОЛЬКО валидным JSON без лишнего текста."},
+                    ],
+                    temperature=0.1,
+                    max_tokens=4000,
+                )
+
+            # Проверяем, не оборвался ли ответ
             if response.choices[0].finish_reason == "length":
                 raise ValueError("Ответ оборвался (max_tokens). Увеличьте лимит.")
-            
+
             content = response.choices[0].message.content
-            
-            # 2. Ремонт: удаляем возможные обёртки <function=...> [citation:1]
-            import re
+
+            # --- Ремонт JSON: удаляем возможные обёртки и мусор ---
+            # 1. Убираем XML-теги, которые любит добавлять Groq [citation:9]
             content = re.sub(r'</?function[^>]*>', '', content).strip()
             
-            # 3. Если модель обернула в ```json ... ``` — убираем
+            # 2. Убираем markdown-обёртку ```json ... ```
             if content.startswith("```"):
                 # Отрезаем первую строку с ```json
                 content = content.split("\n", 1)[1] if "\n" in content else content
                 if content.endswith("```"):
                     content = content[:-3]
                 content = content.strip()
-            
-            # 4. Финальный парсинг
+
+            # 3. Финальный парсинг
             return json.loads(content)
             
         except Exception as e:
             last_err = e
-            # Небольшая пауза перед повтором (Groq может лимитировать)
-            import time
-            time.sleep(2 ** attempt)
+            # Пауза перед повтором (Groq может лимитировать)
+            time.sleep(1 + attempt)
             continue
     
     # Если все попытки провалились — показываем понятную ошибку
