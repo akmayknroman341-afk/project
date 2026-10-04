@@ -1,5 +1,7 @@
 import os
+import re
 import json
+import time
 import sqlite3
 import streamlit as st
 import pandas as pd
@@ -11,19 +13,23 @@ from groq import Groq
 # ============================================================
 
 try:
-    api_key = st.secrets["OPENAI_API_KEY"]
-    model_name = st.secrets.get("OPENAI_MODEL", "llama-3.3-70b-versatile")
+    api_key = st.secrets["GROQ_API_KEY"]
+    model_name = st.secrets.get("GROQ_MODEL", "llama-3.1-8b-instant")
 except (KeyError, FileNotFoundError):
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except ImportError:
         pass
-    api_key = os.getenv("OPENAI_API_KEY")
-    model_name = os.getenv("OPENAI_MODEL", "llama-3.3-70b-versatile")
+    api_key = os.getenv("GROQ_API_KEY")
+    model_name = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 
 if not api_key:
-    st.error("❌ Не найден OPENAI_API_KEY. Добавь его в Secrets на Streamlit Cloud или в .env локально.")
+    st.error(
+        "❌ Не найден GROQ_API_KEY.\n\n"
+        "**На Streamlit Cloud:** добавь его в Manage app → Settings → Secrets.\n\n"
+        "**Локально:** создай файл `.env` с ключом."
+    )
     st.stop()
 
 client = Groq(api_key=api_key)
@@ -76,18 +82,6 @@ def save_course(student, topic, plan):
     conn.close()
 
 
-def get_last_course(student, topic):
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute(
-        "SELECT plan_json FROM courses WHERE student=? AND topic=? ORDER BY id DESC LIMIT 1",
-        (student, topic),
-    )
-    row = c.fetchone()
-    conn.close()
-    return json.loads(row[0]) if row else None
-
-
 def save_attempt(student, topic, day, question, correct, given, is_correct, feedback=""):
     conn = sqlite3.connect(DB)
     c = conn.cursor()
@@ -118,82 +112,59 @@ def get_progress(student, topic):
 
 
 # ============================================================
-# 3. AI-ФУНКЦИИ
+# 3. AI-ФУНКЦИИ (Groq + Prefilling для надёжного JSON)
 # ============================================================
-
-import re
-import time
 
 def ai_json(prompt: str, system: str = "Ты — опытный школьный учитель.",
             retries: int = 3) -> dict:
-    """Запрос к LLM с гарантией JSON-ответа, обходом багов Groq и повторами."""
+    """
+    Запрос к Groq с гарантией JSON через Prefilling.
+    НЕ используем response_format — Groq его не поддерживает для llama.
+    """
     last_err = None
     for attempt in range(retries):
         try:
-            # --- Попытка №1: используем встроенный JSON-режим ---
-            if attempt == 0:
-                response = client.chat.completions.create(
-                    model=MODEL,
-                    messages=[
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": prompt},
-                    ],
-                    response_format={"type": "json_object"},  # Пытаемся включить JSON
-                    temperature=0.1,
-                    max_tokens=4000,
-                )
-            # --- Попытка №2+: если Groq ругается, убираем response_format ---
-            else:
-                # Некоторые модели Groq не поддерживают response_format [citation:2][citation:5]
-                # В этом случае просто просим JSON в промпте
-                response = client.chat.completions.create(
-                    model=MODEL,
-                    messages=[
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": prompt + "\n\nОтветь ТОЛЬКО валидным JSON без лишнего текста."},
-                    ],
-                    temperature=0.1,
-                    max_tokens=4000,
-                )
+            response = client.chat.completions.create(
+                model=MODEL,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                    # Prefilling: заставляем модель начать ответ сразу с JSON
+                    {"role": "assistant", "content": "```json\n{"},
+                ],
+                temperature=0.1,
+                max_tokens=4000,
+            )
 
-            # Проверяем, не оборвался ли ответ
             if response.choices[0].finish_reason == "length":
-                raise ValueError("Ответ оборвался (max_tokens). Увеличьте лимит.")
+                raise ValueError("Ответ оборвался (max_tokens).")
 
             content = response.choices[0].message.content
 
-            # --- Ремонт JSON: удаляем возможные обёртки и мусор ---
-            # 1. Убираем XML-теги, которые любит добавлять Groq [citation:9]
-            content = re.sub(r'</?function[^>]*>', '', content).strip()
-            
-            # 2. Убираем markdown-обёртку ```json ... ```
-            if content.startswith("```"):
-                # Отрезаем первую строку с ```json
-                content = content.split("\n", 1)[1] if "\n" in content else content
-                if content.endswith("```"):
-                    content = content[:-3]
-                content = content.strip()
+            # Склеиваем с префиксом, который мы задали в prefilling
+            content = "{" + content
 
-            # 3. Финальный парсинг
+            # Убираем возможные markdown-обёртки
+            content = re.sub(r'^```(?:json)?\s*', '', content)
+            content = re.sub(r'\s*```$', '', content)
+            content = content.strip()
+
             return json.loads(content)
-            
+
         except Exception as e:
             last_err = e
-            # Пауза перед повтором (Groq может лимитировать)
             time.sleep(1 + attempt)
             continue
-    
-    # Если все попытки провалились — показываем понятную ошибку
-    raise RuntimeError(
-        f"LLM не вернул валидный JSON после {retries} попыток. "
-        f"Последняя ошибка: {last_err}"
-    )
+
+    raise RuntimeError(f"LLM не вернул валидный JSON после {retries} попыток: {last_err}")
+
+
 def build_plan(topic: str, grade: int, days: int = 7) -> dict:
     """Составляет план курса на N дней."""
-    prompt = f"""Составь учебный план по теме «{topic}» для ученика {grade} класса.
+    prompt = f'Составь учебный план по теме «{topic}» для ученика {grade} класса.
 Курс рассчитан на {days} дней, по 20–30 минут в день.
 
-Верни строго JSON:
+Формат ответа — строго JSON:
 {{
   "topic": "{topic}",
   "grade": {grade},
@@ -211,8 +182,10 @@ def build_plan(topic: str, grade: int, days: int = 7) -> dict:
     }}
   ]
 }}
+
 В каждом дне ровно 3 задачи. Задачи — разные по сложности.
-Все ответы — точные, проверяемые. Без воды."""
+Все ответы — точные, проверяемые. Без воды.
+Ответь ТОЛЬКО валидным JSON, без комментариев.'
     return ai_json(prompt)
 
 
@@ -228,8 +201,10 @@ def generate_task(topic: str, day_title: str, goal: str,
 Сгенерируй ОДНУ новую задачу, похожую по типу на прошлые ошибки,
 если они есть. Иначе — новую задачу по теме дня.
 
-Верни JSON:
-{{"question": "...", "answer": "...", "hint": "...", "difficulty": 1-5}}"""
+Формат ответа — строго JSON:
+{{"question": "Условие", "answer": "Правильный ответ", "hint": "Подсказка", "difficulty": 3}}
+
+Ответь ТОЛЬКО валидным JSON."""
     return ai_json(prompt)
 
 
@@ -241,10 +216,11 @@ def check_answer_ai(topic: str, question: str, correct: str, given: str) -> dict
 Ответ ученика: {given}
 
 Проверь, верен ли ответ ученика по смыслу (разные формы записи допустимы).
-Верни JSON:
-{{"is_correct": true,
-  "feedback": "Короткий комментарий ученику (1-2 предложения)",
-  "mistake_type": "тип ошибки или null"}}"""
+
+Формат ответа — строго JSON:
+{{"is_correct": true, "feedback": "Комментарий 1-2 предложения", "mistake_type": null}}
+
+Ответь ТОЛЬКО валидным JSON."""
     return ai_json(prompt)
 
 
@@ -252,14 +228,14 @@ def check_explanation(topic: str, student_text: str) -> dict:
     """Проверяет понимание через объяснение своими словами."""
     prompt = f"""Тема: {topic}
 Ученик объясняет своими словами:
-"{student_text}"
+«{student_text}»
 
-Оцени понимание.
-Верни JSON:
-{{"score": 0,
-  "good": "что ученик понял верно",
-  "gaps": "чего не хватает",
-  "advice": "1 совет"}}"""
+Оцени понимание от 0 до 10.
+
+Формат ответа — строго JSON:
+{{"score": 7, "good": "что ученик понял верно", "gaps": "чего не хватает", "advice": "1 совет"}}
+
+Ответь ТОЛЬКО валидным JSON."""
     return ai_json(prompt)
 
 
@@ -301,12 +277,15 @@ with st.sidebar:
             st.error("Введи тему.")
         else:
             with st.spinner("Нейросеть составляет план курса..."):
-                plan = build_plan(topic, grade, days)
-                save_course(student, topic, plan)
-                st.session_state.plan = plan
-                st.session_state.topic = topic
-                st.session_state.mistakes = []
-                st.rerun()
+                try:
+                    plan = build_plan(topic, grade, days)
+                    save_course(student, topic, plan)
+                    st.session_state.plan = plan
+                    st.session_state.topic = topic
+                    st.session_state.mistakes = []
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Ошибка генерации: {e}")
 
     if st.button("📊 Моя статистика"):
         st.session_state.show_stats = True
@@ -335,7 +314,6 @@ topic = st.session_state.topic
 
 st.header(f"📚 {plan['topic']} · {plan['grade']} класс")
 
-# Предварительные темы
 with st.expander("🔍 Что стоит вспомнить перед курсом"):
     for p in plan.get("prerequisites", []):
         st.write(f"• {p}")
@@ -369,26 +347,28 @@ for idx, (tab, day) in enumerate(zip(tabs, plan["days"])):
                         st.warning("Введи ответ.")
                     else:
                         with st.spinner("AI проверяет..."):
-                            result = check_answer_ai(
-                                topic, task["question"], task["answer"], answer
-                            )
-                        save_attempt(
-                            student, topic, day["day"], task["question"],
-                            task["answer"], answer, result["is_correct"],
-                            result.get("feedback", ""),
-                        )
-                        if result["is_correct"]:
-                            st.success(f"✅ {result['feedback']}")
-                        else:
-                            st.error(f"❌ {result['feedback']}")
-                            st.session_state.mistakes.append(task["question"])
+                            try:
+                                result = check_answer_ai(
+                                    topic, task["question"], task["answer"], answer
+                                )
+                                save_attempt(
+                                    student, topic, day["day"], task["question"],
+                                    task["answer"], answer, result["is_correct"],
+                                    result.get("feedback", ""),
+                                )
+                                if result["is_correct"]:
+                                    st.success(f"✅ {result['feedback']}")
+                                else:
+                                    st.error(f"❌ {result['feedback']}")
+                                    st.session_state.mistakes.append(task["question"])
+                            except Exception as e:
+                                st.error(f"Ошибка проверки: {e}")
 
             if st.button("💡 Подсказка", key=f"hint_{key}"):
                 st.info(task["hint"])
 
             st.divider()
 
-        # Проверка понимания
         st.markdown("### 🧠 Проверь понимание")
         explanation = st.text_area(
             "Объясни тему своими словами (2-3 предложения):",
@@ -399,11 +379,14 @@ for idx, (tab, day) in enumerate(zip(tabs, plan["days"])):
                 st.warning("Напиши чуть больше.")
             else:
                 with st.spinner("AI оценивает..."):
-                    ev = check_explanation(topic, explanation)
-                st.metric("Понимание", f"{ev['score']}/10")
-                st.write(f"✅ **Понял:** {ev['good']}")
-                st.write(f"⚠️ **Пробелы:** {ev['gaps']}")
-                st.write(f"💡 **Совет:** {ev['advice']}")
+                    try:
+                        ev = check_explanation(topic, explanation)
+                        st.metric("Понимание", f"{ev['score']}/10")
+                        st.write(f"✅ **Понял:** {ev['good']}")
+                        st.write(f"⚠️ **Пробелы:** {ev['gaps']}")
+                        st.write(f"💡 **Совет:** {ev['advice']}")
+                    except Exception as e:
+                        st.error(f"Ошибка оценки: {e}")
 
 
 # --- Адаптивная доп. задача ---
@@ -414,11 +397,14 @@ st.caption("Нейросеть сгенерирует задачу с учёто
 if st.button("Сгенерировать задачу"):
     day = plan["days"][0]
     with st.spinner("Генерируем..."):
-        extra = generate_task(
-            topic, day["title"], day["goal"],
-            st.session_state.get("mistakes", []),
-        )
-    st.session_state.extra_task = extra
+        try:
+            extra = generate_task(
+                topic, day["title"], day["goal"],
+                st.session_state.get("mistakes", []),
+            )
+            st.session_state.extra_task = extra
+        except Exception as e:
+            st.error(f"Ошибка генерации задачи: {e}")
 
 if "extra_task" in st.session_state:
     extra = st.session_state.extra_task
@@ -427,9 +413,12 @@ if "extra_task" in st.session_state:
     a = st.text_input("Ответ:", key="extra_ans")
     if st.button("Проверить доп. задачу"):
         if a.strip():
-            r = check_answer_ai(topic, extra["question"], extra["answer"], a)
-            if r["is_correct"]:
-                st.success(f"✅ {r['feedback']}")
-            else:
-                st.error(f"❌ {r['feedback']}")
-                st.info(f"💡 Подсказка: {extra['hint']}")
+            try:
+                r = check_answer_ai(topic, extra["question"], extra["answer"], a)
+                if r["is_correct"]:
+                    st.success(f"✅ {r['feedback']}")
+                else:
+                    st.error(f"❌ {r['feedback']}")
+                    st.info(f"💡 Подсказка: {extra['hint']}")
+            except Exception as e:
+                st.error(f"Ошибка: {e}")
