@@ -123,7 +123,7 @@ def get_progress(student, topic):
 
 def ai_json(prompt: str, system: str = "Ты — опытный школьный учитель.",
             retries: int = 3) -> dict:
-    """Запрос к LLM с гарантией JSON-ответа и повторами."""
+    """Запрос к LLM с гарантией JSON-ответа, ремонтом и повторами."""
     last_err = None
     for attempt in range(retries):
         try:
@@ -134,35 +134,43 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
                     {"role": "user", "content": prompt},
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.1,          # ← КРИТИЧНО для Groq
-                max_tokens=4000,          # ← чтобы JSON не обрезался
+                temperature=0.1,          # КРИТИЧНО для Groq [citation:14]
+                max_tokens=4000,          # Чтобы JSON не обрезался [citation:14]
             )
             
-            # Проверяем, не оборвался ли ответ
+            # 1. Проверка на обрыв ответа (очень важно!)
             if response.choices[0].finish_reason == "length":
-                raise ValueError("Ответ оборвался (max_tokens)")
+                raise ValueError("Ответ оборвался (max_tokens). Увеличьте лимит.")
             
             content = response.choices[0].message.content
             
-            # Ремонт: удаляем возможные обёртки <function=...>
+            # 2. Ремонт: удаляем возможные обёртки <function=...> [citation:1]
             import re
             content = re.sub(r'</?function[^>]*>', '', content).strip()
             
-            # Если модель обернула в ```json ... ``` — убираем
+            # 3. Если модель обернула в ```json ... ``` — убираем
             if content.startswith("```"):
-                content = content.split("```")[1]
-                if content.startswith("json"):
-                    content = content[4:]
+                # Отрезаем первую строку с ```json
+                content = content.split("\n", 1)[1] if "\n" in content else content
+                if content.endswith("```"):
+                    content = content[:-3]
                 content = content.strip()
             
+            # 4. Финальный парсинг
             return json.loads(content)
             
         except Exception as e:
             last_err = e
+            # Небольшая пауза перед повтором (Groq может лимитировать)
+            import time
+            time.sleep(2 ** attempt)
             continue
     
-    raise RuntimeError(f"LLM не вернул валидный JSON: {last_err}")
-
+    # Если все попытки провалились — показываем понятную ошибку
+    raise RuntimeError(
+        f"LLM не вернул валидный JSON после {retries} попыток. "
+        f"Последняя ошибка: {last_err}"
+    )
 def build_plan(topic: str, grade: int, days: int = 7) -> dict:
     """Составляет план курса на N дней."""
     prompt = f"""Составь учебный план по теме «{topic}» для ученика {grade} класса.
