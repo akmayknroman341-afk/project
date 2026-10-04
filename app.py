@@ -125,7 +125,7 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
             retries: int = 3) -> dict:
     """Запрос к LLM с гарантией JSON-ответа и повторами."""
     last_err = None
-    for _ in range(retries):
+    for attempt in range(retries):
         try:
             response = client.chat.completions.create(
                 model=MODEL,
@@ -134,14 +134,34 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
                     {"role": "user", "content": prompt},
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.7,
+                temperature=0.1,          # ← КРИТИЧНО для Groq
+                max_tokens=4000,          # ← чтобы JSON не обрезался
             )
-            return json.loads(response.choices[0].message.content)
+            
+            # Проверяем, не оборвался ли ответ
+            if response.choices[0].finish_reason == "length":
+                raise ValueError("Ответ оборвался (max_tokens)")
+            
+            content = response.choices[0].message.content
+            
+            # Ремонт: удаляем возможные обёртки <function=...>
+            import re
+            content = re.sub(r'</?function[^>]*>', '', content).strip()
+            
+            # Если модель обернула в ```json ... ``` — убираем
+            if content.startswith("```"):
+                content = content.split("```")[1]
+                if content.startswith("json"):
+                    content = content[4:]
+                content = content.strip()
+            
+            return json.loads(content)
+            
         except Exception as e:
             last_err = e
             continue
+    
     raise RuntimeError(f"LLM не вернул валидный JSON: {last_err}")
-
 
 def build_plan(topic: str, grade: int, days: int = 7) -> dict:
     """Составляет план курса на N дней."""
