@@ -118,10 +118,12 @@ def get_progress(student, topic):
 def ai_json(prompt: str, system: str = "Ты — опытный школьный учитель.",
             retries: int = 3) -> dict:
     """
-    Запрос к Groq с гарантией JSON через Prefilling.
-    НЕ используем response_format — Groq его не поддерживает для llama.
+    Запрос к Groq с Prefilling и «ремонтом» JSON.
+    Если модель вернула невалидный JSON — пробуем его починить.
     """
+    import re, time
     last_err = None
+    
     for attempt in range(retries):
         try:
             response = client.chat.completions.create(
@@ -129,36 +131,60 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
                 messages=[
                     {"role": "system", "content": system},
                     {"role": "user", "content": prompt},
-                    # Prefilling: модель продолжит уже начатый JSON
                     {"role": "assistant", "content": "```json\n{"},
                 ],
                 temperature=0.1,
                 max_tokens=4000,
             )
-
+            
             if response.choices[0].finish_reason == "length":
                 raise ValueError("Ответ оборвался (max_tokens).")
-
+            
             content = response.choices[0].message.content
-
-            # Склеиваем с префиксом, который задали в prefilling
-            content = "{" + content
-
-            # Убираем возможные markdown-обёртки
+            content = "{" + content  # склеиваем с prefilling
+            
+            # --- РЕМОНТ JSON ---
+            # 1. Убираем markdown-обёртки
             content = re.sub(r'^```(?:json)?\s*', '', content)
             content = re.sub(r'\s*```$', '', content)
             content = content.strip()
-
-            return json.loads(content)
-
+            
+            # 2. Убираем XML-теги, которые любит добавлять Groq
+            content = re.sub(r'</?function[^>]*>', '', content).strip()
+            
+            # 3. Пытаемся распарсить как есть
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                pass
+            
+            # 4. Ремонт №1: заменяем одинарные кавычки на двойные
+            # (только если это НЕ внутри строки — упрощённый подход)
+            fixed = content.replace("'", '"')
+            
+            # 5. Ремонт №2: убираем trailing commas (запятые перед } или ])
+            fixed = re.sub(r',\s*([}\]])', r'\1', fixed)
+            
+            # 6. Ремонт №3: если значение — одна кавычка без пары, пробуем ещё раз
+            try:
+                return json.loads(fixed)
+            except json.JSONDecodeError as e:
+                last_err = e
+                # 7. Ремонт №4: извлекаем JSON между первой { и последней }
+                match = re.search(r'\{.*\}', fixed, re.DOTALL)
+                if match:
+                    try:
+                        return json.loads(match.group())
+                    except json.JSONDecodeError:
+                        pass
+                raise
+            
         except Exception as e:
             last_err = e
             time.sleep(1 + attempt)
             continue
-
+    
     raise RuntimeError(f"LLM не вернул валидный JSON после {retries} попыток: {last_err}")
-
-
 def build_plan(topic: str, grade: int, days: int = 7) -> dict:
     """Составляет план курса на N дней."""
     prompt = f"""Составь учебный план по теме «{topic}» для ученика {grade} класса.
