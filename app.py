@@ -127,16 +127,16 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
     for attempt in range(retries):
         try:
                 response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
-            {"role": "assistant", "content": "```json\n{"},
-        ],
-        temperature=0.1,
-        max_tokens=8192,          # было 4000 — увеличили для reasoning-моделей
-        reasoning_effort="low",   # снижаем «размышления», больше бюджета на JSON
-    )
+    model=MODEL,
+    messages=[
+        {"role": "system", "content": system},
+        {"role": "user", "content": prompt},
+        {"role": "assistant", "content": "```json\n{"},
+    ],
+    temperature=0.1,
+    max_tokens=8192,          # было 4000 — увеличили для reasoning-моделей
+    reasoning_effort="low",   # снижаем «размышления», больше бюджета на JSON
+)
             
             if response.choices[0].finish_reason == "length":
                 raise ValueError("Ответ оборвался (max_tokens).")
