@@ -129,7 +129,7 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
                 messages=[
                     {"role": "system", "content": system},
                     {"role": "user", "content": prompt},
-                    # Prefilling: заставляем модель начать ответ сразу с JSON
+                    # Prefilling: модель продолжит уже начатый JSON
                     {"role": "assistant", "content": "```json\n{"},
                 ],
                 temperature=0.1,
@@ -141,7 +141,7 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
 
             content = response.choices[0].message.content
 
-            # Склеиваем с префиксом, который мы задали в prefilling
+            # Склеиваем с префиксом, который задали в prefilling
             content = "{" + content
 
             # Убираем возможные markdown-обёртки
@@ -162,7 +162,7 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
 def build_plan(topic: str, grade: int, days: int = 7) -> dict:
     """Составляет план курса на N дней."""
     prompt = f"""Составь учебный план по теме «{topic}» для ученика {grade} класса.
-Курс рассчитан на {days} дней, по 20–30 минут в день.
+Курс рассчитан на {days} дней, по 20-30 минут в день.
 
 Формат ответа — строго JSON:
 {{
@@ -206,6 +206,7 @@ def generate_task(topic: str, day_title: str, goal: str,
 
 Ответь ТОЛЬКО валидным JSON."""
     return ai_json(prompt)
+
 
 def check_answer_ai(topic: str, question: str, correct: str, given: str) -> dict:
     """Проверяет ответ, допуская разные формы записи."""
