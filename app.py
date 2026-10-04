@@ -134,7 +134,7 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
         {"role": "assistant", "content": "```json\n{"},
     ],
     temperature=0.1,
-    max_tokens=700,          # было 4000 — увеличили для reasoning-моделей
+    max_tokens=800,          # было 4000 — увеличили для reasoning-моделей
     reasoning_effort="low",   # снижаем «размышления», больше бюджета на JSON
 )
             
@@ -186,10 +186,10 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
             continue
     
     raise RuntimeError(f"LLM не вернул валидный JSON после {retries} попыток: {last_err}")
-def build_plan(topic: str, grade: int, days: int = 7) -> dict:
-    """Составляет план курса на N дней."""
-    prompt = f"""Составь учебный план по теме «{topic}» для ученика {grade} класса.
-Курс рассчитан на {days} дней, по 20-30 минут в день.
+def build_outline(topic: str, grade: int, days: int = 7) -> dict:
+    """Шаг 1: получаем только оглавление курса (заголовки дней)."""
+    prompt = f"""Составь оглавление учебного курса по теме «{topic}» для ученика {grade} класса.
+Курс на {days} дней, по 20-30 минут в день.
 
 Формат ответа — строго JSON:
 {{
@@ -197,24 +197,60 @@ def build_plan(topic: str, grade: int, days: int = 7) -> dict:
   "grade": {grade},
   "prerequisites": ["тема1", "тема2"],
   "days": [
-    {{
-      "day": 1,
-      "title": "Короткое название дня",
-      "goal": "Что ученик освоит за день",
-      "theory": "Объяснение на 3-5 предложений простым языком",
-      "example": "Разобранный пример",
-      "tasks": [
-        {{"question": "Условие", "answer": "Правильный ответ", "hint": "Подсказка"}}
-      ]
-    }}
+    {{"day": 1, "title": "Короткое название дня", "goal": "Что освоит ученик"}}
   ]
 }}
 
-В каждом дне ровно 3 задачи. Задачи — разные по сложности.
-Все ответы — точные, проверяемые. Без воды.
-Ответь ТОЛЬКО валидным JSON, без комментариев."""
+Ровно {days} дней. Только заголовки и цели, без теории и задач.
+Ответь ТОЛЬКО валидным JSON."""
     return ai_json(prompt)
 
+
+def build_day_content(topic: str, grade: int, day_info: dict) -> dict:
+    """Шаг 2: для одного дня генерируем теорию, пример и 3 задачи."""
+    prompt = f"""Тема курса: «{topic}» ({grade} класс).
+День {day_info['day']}: {day_info['title']}
+Цель дня: {day_info['goal']}
+
+Составь материалы для этого дня.
+
+Формат ответа — строго JSON:
+{{
+  "theory": "Объяснение на 3-5 предложений простым языком",
+  "example": "Разобранный пример",
+  "tasks": [
+    {{"question": "Условие задачи 1", "answer": "Правильный ответ", "hint": "Подсказка"}},
+    {{"question": "Условие задачи 2", "answer": "Правильный ответ", "hint": "Подсказка"}},
+    {{"question": "Условие задачи 3", "answer": "Правильный ответ", "hint": "Подсказка"}}
+  ]
+}}
+
+Ровно 3 задачи. Все ответы точные.
+Ответь ТОЛЬКО валидным JSON."""
+    return ai_json(prompt)
+
+
+def build_plan(topic: str, grade: int, days: int = 7) -> dict:
+    """Собирает полный план: сначала оглавление, потом каждый день отдельно."""
+    # Шаг 1: оглавление
+    outline = build_outline(topic, grade, days)
+
+    # Шаг 2: наполняем каждый день по отдельности
+    full_days = []
+    for day_info in outline.get("days", []):
+        content = build_day_content(topic, grade, day_info)
+        full_days.append({
+            "day": day_info["day"],
+            "title": day_info["title"],
+            "goal": day_info["goal"],
+            "theory": content.get("theory", ""),
+            "example": content.get("example", ""),
+            "tasks": content.get("tasks", []),
+        })
+        time.sleep(2)  # пауза 2 сек, чтобы не упереться в лимит OTPM
+
+    outline["days"] = full_days
+    return outline
 
 def generate_task(topic: str, day_title: str, goal: str,
                   previous_mistakes: list) -> dict:
