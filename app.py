@@ -126,7 +126,7 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
     
     for attempt in range(retries):
         try:
-                response = client.chat.completions.create(
+            response = client.chat.completions.create(
     model=MODEL,
     messages=[
         {"role": "system", "content": system},
