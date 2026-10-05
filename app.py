@@ -25,28 +25,27 @@ st.markdown("""
     <style>
     /* Скрыть меню (три точки) */
     #MainMenu {visibility: hidden;}
-
+    
     /* Скрыть футер "Made with Streamlit" */
     footer {visibility: hidden;}
-
+    
     /* Скрыть тулбар (Deploy, Record) */
     [data-testid="stToolbar"] {display: none !important;}
-
+    
     /* Скрыть цветную полоску сверху */
     [data-testid="stDecoration"] {display: none !important;}
-
+    
     /* Скрыть индикатор "Running" */
     [data-testid="stStatusWidget"] {display: none !important;}
-
+    
     /* Скрыть кнопку "Manage app" */
     [data-testid="manage-app-button"] {display: none !important;}
 
-    /* ПРИНУДИТЕЛЬНО ПОКАЗАТЬ кнопку выдвижения сайдбара */
-    button[data-testid="stBaseButton-headerNoPadding"],
-    button[data-testid="stSidebarCollapseButton"],
-    [data-testid="collapsedControl"],
+    /* ПРИНУДИТЕЛЬНО ПОКАЗАТЬ кнопку сайдбара (набор селекторов для разных версий) */
     [data-testid="stSidebarCollapsedControl"],
-    [data-testid="stSidebarCollapseButton"] {
+    [data-testid="stSidebarCollapseButton"],
+    [data-testid="collapsedControl"],
+    button[data-testid="stBaseButton-headerNoPadding"] {
         display: block !important;
         visibility: visible !important;
         opacity: 1 !important;
