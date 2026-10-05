@@ -8,6 +8,12 @@ import pandas as pd
 from datetime import datetime
 from groq import Groq
 from json_repair import repair_json
+
+
+# ============================================================
+# 1. НАСТРОЙКА СТРАНИЦЫ + СКРЫТИЕ ЭЛЕМЕНТОВ АВТОРА
+# ============================================================
+
 st.set_page_config(
     page_title="Тема за 7 дней",
     page_icon="🧠",
@@ -26,13 +32,15 @@ st.markdown("""
     [data-testid="stStatusWidget"] {display: none !important;}
     </style>
 """, unsafe_allow_html=True)
+
+
 # ============================================================
-# 1. КЛЮЧИ
+# 2. ПОЛУЧЕНИЕ КЛЮЧЕЙ
 # ============================================================
 
 try:
     api_key = st.secrets["GROQ_API_KEY"]
-    model_name = st.secrets.get("GROQ_MODEL", "qwen/qwen3.8-27b")
+    model_name = st.secrets.get("GROQ_MODEL", "openai/gpt-oss-20b")
 except (KeyError, FileNotFoundError):
     try:
         from dotenv import load_dotenv
@@ -40,10 +48,14 @@ except (KeyError, FileNotFoundError):
     except ImportError:
         pass
     api_key = os.getenv("GROQ_API_KEY")
-    model_name = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
+    model_name = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 
 if not api_key:
-    st.error("Не найден GROQ_API_KEY. Добавь его в Secrets.")
+    st.error(
+        "❌ Не найден GROQ_API_KEY.\n\n"
+        "**На Streamlit Cloud:** добавь его в Manage app → Settings → Secrets.\n\n"
+        "**Локально:** создай файл `.env` с ключом."
+    )
     st.stop()
 
 client = Groq(api_key=api_key)
@@ -52,7 +64,7 @@ DB = "progress.db"
 
 
 # ============================================================
-# 2. БАЗА ДАННЫХ
+# 3. БАЗА ДАННЫХ (SQLite)
 # ============================================================
 
 def init_db():
@@ -100,8 +112,12 @@ def save_attempt(student, topic, day, question, correct, given, is_correct, feed
     conn = sqlite3.connect(DB)
     c = conn.cursor()
     c.execute(
-        "INSERT INTO attempts (student, topic, day, question, correct_answer, student_answer, is_correct, ai_feedback, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-        (student, topic, day, question, correct, given, int(is_correct), feedback, datetime.now().isoformat()),
+        """INSERT INTO attempts
+           (student, topic, day, question, correct_answer, student_answer,
+            is_correct, ai_feedback, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (student, topic, day, question, correct, given,
+         int(is_correct), feedback, datetime.now().isoformat()),
     )
     conn.commit()
     conn.close()
@@ -111,7 +127,9 @@ def get_progress(student, topic):
     conn = sqlite3.connect(DB)
     c = conn.cursor()
     c.execute(
-        "SELECT day, COUNT(*), SUM(is_correct) FROM attempts WHERE student=? AND topic=? GROUP BY day ORDER BY day",
+        """SELECT day, COUNT(*), SUM(is_correct)
+           FROM attempts WHERE student=? AND topic=?
+           GROUP BY day ORDER BY day""",
         (student, topic),
     )
     rows = c.fetchall()
@@ -120,10 +138,12 @@ def get_progress(student, topic):
 
 
 # ============================================================
-# 3. AI
+# 4. AI-ФУНКЦИИ (Groq + Prefilling + json-repair)
 # ============================================================
 
-def ai_json(prompt: str, system: str = "Ты — опытный школьный учитель.", retries: int = 3) -> dict:
+def ai_json(prompt: str, system: str = "Ты — опытный школьный учитель.",
+            retries: int = 3) -> dict:
+    """Запрос к Groq с Prefilling и ремонтом JSON."""
     last_err = None
     for attempt in range(retries):
         try:
@@ -137,7 +157,7 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
                 temperature=0.1,
                 max_tokens=950,
                 reasoning_effort="low",
-                timeout=30,
+                timeout=45,
             )
 
             if response.choices[0].finish_reason == "length":
@@ -145,6 +165,7 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
 
             content = response.choices[0].message.content
             content = "{" + content
+
             content = re.sub(r'^```(?:json)?\s*', '', content)
             content = re.sub(r'\s*```$', '', content)
             content = content.strip()
@@ -186,6 +207,7 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
 
 
 def build_outline(topic: str, grade: int, days: int = 7) -> dict:
+    """Шаг 1: оглавление курса."""
     prompt = f"""Составь оглавление учебного курса по теме «{topic}» для ученика {grade} класса.
 Курс на {days} дней, по 20-30 минут в день.
 
@@ -205,7 +227,7 @@ def build_outline(topic: str, grade: int, days: int = 7) -> dict:
 
 
 def build_day_theory(topic: str, grade: int, day_info: dict) -> dict:
-    """Часть 1: только теория и пример."""
+    """Шаг 2а: теория и пример для одного дня."""
     prompt = f"""Тема: «{topic}» ({grade} класс).
 День {day_info['day']}: {day_info['title']}
 Цель: {day_info['goal']}
@@ -218,12 +240,12 @@ def build_day_theory(topic: str, grade: int, day_info: dict) -> dict:
   "example": "Разобранный пример"
 }}
 
-Ответь ТОЛЬКО валидным JSON. Без лишнего текста."""
+Ответь ТОЛЬКО валидным JSON."""
     return ai_json(prompt)
 
 
 def build_day_tasks(topic: str, grade: int, day_info: dict) -> dict:
-    """Часть 2: только 3 задачи."""
+    """Шаг 2б: 3 задачи для одного дня."""
     prompt = f"""Тема: «{topic}» ({grade} класс).
 День {day_info['day']}: {day_info['title']}
 Цель: {day_info['goal']}
@@ -240,11 +262,12 @@ def build_day_tasks(topic: str, grade: int, day_info: dict) -> dict:
 }}
 
 Ровно 3 задачи. Все ответы точные.
-Ответь ТОЛЬКО валидным JSON. Без лишнего текста."""
+Ответь ТОЛЬКО валидным JSON."""
     return ai_json(prompt)
 
 
 def check_answer_ai(topic: str, question: str, correct: str, given: str) -> dict:
+    """Проверка ответа ученика."""
     prompt = f"""Тема: {topic}
 Вопрос: {question}
 Правильный ответ: {correct}
@@ -260,6 +283,7 @@ def check_answer_ai(topic: str, question: str, correct: str, given: str) -> dict
 
 
 def check_explanation(topic: str, student_text: str) -> dict:
+    """Оценка понимания через объяснение."""
     prompt = f"""Тема: {topic}
 Ученик объясняет своими словами: «{student_text}»
 
@@ -273,15 +297,18 @@ def check_explanation(topic: str, student_text: str) -> dict:
 
 
 # ============================================================
-# 4. ИНТЕРФЕЙС
+# 5. ИНИЦИАЛИЗАЦИЯ
 # ============================================================
 
-st.set_page_config(page_title="Тема за 7 дней", page_icon="🧠", layout="wide")
 init_db()
 
 st.title("🧠 Тема за 7 дней")
 st.caption("Введи школьную тему — нейросеть составит персональный курс")
 
+
+# ============================================================
+# 6. БОКОВАЯ ПАНЕЛЬ
+# ============================================================
 
 with st.sidebar:
     st.header("Настройки")
@@ -301,7 +328,7 @@ with st.sidebar:
 
     days = st.slider("Сколько дней в курсе", 3, 7, 3)
 
-        if st.button("🚀 Составить курс", type="primary"):
+    if st.button("🚀 Составить курс", type="primary"):
         if not topic.strip():
             st.error("Введи тему.")
         else:
@@ -311,12 +338,16 @@ with st.sidebar:
                 progress.progress(15, text="📋 Оглавление готово. Заполняем дни...")
 
                 full_days = []
-                total = len(outline.get("days", []))
-                for i, day_info in enumerate(outline.get("days", [])):
-                    pct = 15 + int(80 * (i + 1) / max(total, 1))
-                    progress.progress(pct, text=f"📝 День {day_info['day']}: {day_info['title']}")
+                day_list = outline.get("days", [])
+                total = max(len(day_list), 1)
 
-                    # Часть 1: теория и пример
+                for i, day_info in enumerate(day_list):
+                    pct = 15 + int(80 * (i + 1) / total)
+                    progress.progress(
+                        pct,
+                        text=f"📝 День {day_info['day']}: {day_info['title']}"
+                    )
+
                     try:
                         theory_data = build_day_theory(topic, grade, day_info)
                         theory = theory_data.get("theory", "")
@@ -327,7 +358,6 @@ with st.sidebar:
 
                     time.sleep(0.3)
 
-                    # Часть 2: задачи
                     try:
                         tasks_data = build_day_tasks(topic, grade, day_info)
                         tasks = tasks_data.get("tasks", [])
@@ -357,9 +387,14 @@ with st.sidebar:
 
             except Exception as e:
                 st.error(f"Ошибка генерации: {e}")
+
     if st.button("📊 Моя статистика"):
         st.session_state.show_stats = True
 
+
+# ============================================================
+# 7. СТАТИСТИКА
+# ============================================================
 
 if st.session_state.get("show_stats"):
     st.subheader("📊 Ваш прогресс")
@@ -372,6 +407,10 @@ if st.session_state.get("show_stats"):
         else:
             st.info("Пока нет решённых задач.")
 
+
+# ============================================================
+# 8. ОСНОВНОЙ ЭКРАН
+# ============================================================
 
 if "plan" not in st.session_state:
     st.info("👈 Введи тему в боковой панели и нажми «Составить курс»")
@@ -415,8 +454,16 @@ for idx, (tab, day) in enumerate(zip(tabs, plan["days"])):
                     else:
                         with st.spinner("AI проверяет..."):
                             try:
-                                result = check_answer_ai(topic, task["question"], task["answer"], answer)
-                                save_attempt(student, topic, day["day"], task["question"], task["answer"], answer, result["is_correct"], result.get("feedback", ""))
+                                result = check_answer_ai(
+                                    topic, task["question"],
+                                    task["answer"], answer
+                                )
+                                save_attempt(
+                                    student, topic, day["day"],
+                                    task["question"], task["answer"],
+                                    answer, result["is_correct"],
+                                    result.get("feedback", "")
+                                )
                                 if result["is_correct"]:
                                     st.success(f"✅ {result['feedback']}")
                                 else:
@@ -431,7 +478,10 @@ for idx, (tab, day) in enumerate(zip(tabs, plan["days"])):
             st.divider()
 
         st.markdown("### 🧠 Проверь понимание")
-        explanation = st.text_area("Объясни тему:", key=f"expl_{idx}")
+        explanation = st.text_area(
+            "Объясни тему своими словами:",
+            key=f"expl_{idx}"
+        )
         if st.button("Оценить", key=f"eval_{idx}"):
             if len(explanation.strip()) < 10:
                 st.warning("Напиши чуть больше.")
