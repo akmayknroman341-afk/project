@@ -20,7 +20,43 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+st.markdown("""
+    <style>
+    /* Скрыть кнопку "Manage app" в правом нижнем углу */
+    [data-testid="manage-app-button"] {display: none !important;}
+    button[title="Manage app"] {display: none !important;}
+    .viewerBadge_container__1QSob {display: none !important;}
+    .styles_viewerBadge__1yB5_ {display: none !important;}
+    .viewerBadge_link__1S137 {display: none !important;}
+    .viewerBadge_text__1JaDK {display: none !important;}
 
+    /* Скрыть футер "Made with Streamlit" */
+    footer {visibility: hidden;}
+
+    /* Скрыть меню с тремя точками */
+    #MainMenu {visibility: hidden;}
+
+    /* Скрыть тулбар (Deploy, Record и т.д.) */
+    [data-testid="stToolbar"] {display: none !important;}
+    .stDeployButton {display: none !important;}
+
+    /* Скрыть индикатор загрузки */
+    [data-testid="stStatusWidget"] {display: none !important;}
+
+    /* Скрыть цветную полоску сверху */
+    [data-testid="stDecoration"] {display: none !important;}
+
+    /* ВАЖНО: принудительно показать кнопку сайдбара */
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="collapsedControl"],
+    button[data-testid="stBaseButton-headerNoPadding"] {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        z-index: 999999 !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # ============================================================
 # 2. ПОЛУЧЕНИЕ КЛЮЧЕЙ
