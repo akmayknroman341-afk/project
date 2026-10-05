@@ -121,69 +121,76 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
     Запрос к Groq с Prefilling и «ремонтом» JSON.
     Если модель вернула невалидный JSON — пробуем его починить.
     """
-    import re, time
+    import re
+    import time
+    from json_repair import repair_json
+
     last_err = None
-    
     for attempt in range(retries):
         try:
             response = client.chat.completions.create(
-    model=MODEL,
-    messages=[
-        {"role": "system", "content": system},
-        {"role": "user", "content": prompt},
-        {"role": "assistant", "content": "```json\n{"},
-    ],
-    temperature=0.1,
-    max_tokens=950,          # было 4000 — увеличили для reasoning-моделей
-    reasoning_effort="low",   # снижаем «размышления», больше бюджета на JSON
-)
-            
+                model=MODEL,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": "```json\n{"},
+                ],
+                temperature=0.1,
+                max_tokens=950,
+                reasoning_effort="low",
+            )
+
             if response.choices[0].finish_reason == "length":
                 raise ValueError("Ответ оборвался (max_tokens).")
-            
+
             content = response.choices[0].message.content
-            content = "{" + content  # склеиваем с prefilling
-            
-            # --- РЕМОНТ JSON ---
-            # 1. Убираем markdown-обёртки
+            content = "{" + content
+
+            # Убираем markdown-обёртки
             content = re.sub(r'^```(?:json)?\s*', '', content)
             content = re.sub(r'\s*```$', '', content)
             content = content.strip()
-            
-            # 2. Убираем XML-теги, которые любит добавлять Groq
+
+            # Убираем XML-теги, которые любит добавлять Groq
             content = re.sub(r'</?function[^>]*>', '', content).strip()
-            
-            # 3. Пытаемся распарсить как есть
+
+            # Попытка 1: распарсить как есть
             try:
                 return json.loads(content)
             except json.JSONDecodeError:
                 pass
-            
-            # 4. Ремонт №1: заменяем одинарные кавычки на двойные
-            # (только если это НЕ внутри строки — упрощённый подход)
+
+            # Попытка 2: «ремонт» через json-repair
+            try:
+                repaired = repair_json(content)
+                return json.loads(repaired)
+            except Exception as repair_err:
+                last_err = repair_err
+
+            # Попытка 3: ручной ремонт (одинарные кавычки + trailing commas)
             fixed = content.replace("'", '"')
-            
-            # 5. Ремонт №2: убираем trailing commas (запятые перед } или ])
             fixed = re.sub(r',\s*([}\]])', r'\1', fixed)
-            
-            # 6. Ремонт №3: если значение — одна кавычка без пары, пробуем ещё раз
             try:
                 return json.loads(fixed)
-            except json.JSONDecodeError as e:
-                last_err = e
-                # 7. Ремонт №4: извлекаем JSON между первой { и последней }
-                match = re.search(r'\{.*\}', fixed, re.DOTALL)
-                if match:
-                    try:
-                        return json.loads(match.group())
-                    except json.JSONDecodeError:
-                        pass
-                raise
-            
+            except json.JSONDecodeError:
+                pass
+
+            # Попытка 4: извлекаем JSON между первой { и последней }
+            match = re.search(r'\{.*\}', fixed, re.DOTALL)
+            if match:
+                try:
+                    return json.loads(match.group())
+                except json.JSONDecodeError:
+                    pass
+
+            raise ValueError(f"Не удалось распарсить JSON: {content[:200]}")
+
         except Exception as e:
             last_err = e
-            time.sleep(1 + attempt)
+            time.sleep(2 + attempt)
             continue
+
+    raise RuntimeError(f"LLM не вернул валидный JSON после {retries} попыток: {last_err}")
     
     raise RuntimeError(f"LLM не вернул валидный JSON после {retries} попыток: {last_err}")
 def build_outline(topic: str, grade: int, days: int = 7) -> dict:
