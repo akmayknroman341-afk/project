@@ -25,23 +25,23 @@ st.markdown("""
     <style>
     /* Скрыть меню (три точки) */
     #MainMenu {visibility: hidden;}
-    
+
     /* Скрыть футер "Made with Streamlit" */
     footer {visibility: hidden;}
-    
+
     /* Скрыть тулбар (Deploy, Record) */
     [data-testid="stToolbar"] {display: none !important;}
-    
+
     /* Скрыть цветную полоску сверху */
     [data-testid="stDecoration"] {display: none !important;}
-    
+
     /* Скрыть индикатор "Running" */
     [data-testid="stStatusWidget"] {display: none !important;}
-    
+
     /* Скрыть кнопку "Manage app" */
     [data-testid="manage-app-button"] {display: none !important;}
-    
-    /* ПРИНУДИТЕЛЬНО ПОКАЗАТЬ кнопку сайдбара (несколько вариантов селекторов) */
+
+    /* ПРИНУДИТЕЛЬНО ПОКАЗАТЬ кнопку выдвижения сайдбара */
     button[data-testid="stBaseButton-headerNoPadding"],
     button[data-testid="stSidebarCollapseButton"],
     [data-testid="collapsedControl"],
@@ -50,13 +50,11 @@ st.markdown("""
         display: block !important;
         visibility: visible !important;
         opacity: 1 !important;
-        position: fixed !important;
-        top: 10px !important;
-        left: 10px !important;
         z-index: 999999 !important;
     }
     </style>
 """, unsafe_allow_html=True)
+
 
 # ============================================================
 # 2. ПОЛУЧЕНИЕ КЛЮЧЕЙ
