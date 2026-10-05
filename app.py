@@ -8,7 +8,30 @@ import pandas as pd
 from datetime import datetime
 from groq import Groq
 from json_repair import repair_json
+st.set_page_config(
+    page_title="Тема за 7 дней",
+    page_icon="🧠",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
+# Скрываем меню, футер и кнопку Manage app
+hide_style = """
+    <style>
+    /* Скрыть главное меню (три точки) */
+    #MainMenu {visibility: hidden;}
+
+    /* Скрыть футер "Made with Streamlit" */
+    footer {visibility: hidden;}
+
+    /* Скрыть кнопку "Manage app" в правом нижнем углу */
+    [data-testid="manage-app-button"] {display: none !important;}
+
+    /* Скрыть значок Streamlit в шапке */
+    [data-testid="stHeader"] {background: rgba(0,0,0,0);}
+    </style>
+"""
+st.markdown(hide_style, unsafe_allow_html=True)
 # ============================================================
 # 1. КЛЮЧИ
 # ============================================================
@@ -187,17 +210,34 @@ def build_outline(topic: str, grade: int, days: int = 7) -> dict:
     return ai_json(prompt)
 
 
-def build_day_content(topic: str, grade: int, day_info: dict) -> dict:
-    prompt = f"""Тема курса: «{topic}» ({grade} класс).
+def build_day_theory(topic: str, grade: int, day_info: dict) -> dict:
+    """Часть 1: только теория и пример."""
+    prompt = f"""Тема: «{topic}» ({grade} класс).
 День {day_info['day']}: {day_info['title']}
-Цель дня: {day_info['goal']}
+Цель: {day_info['goal']}
 
-Составь материалы для этого дня.
+Сформулируй теорию и пример.
 
 Формат ответа — строго JSON:
 {{
   "theory": "Объяснение на 3-5 предложений простым языком",
-  "example": "Разобранный пример",
+  "example": "Разобранный пример"
+}}
+
+Ответь ТОЛЬКО валидным JSON. Без лишнего текста."""
+    return ai_json(prompt)
+
+
+def build_day_tasks(topic: str, grade: int, day_info: dict) -> dict:
+    """Часть 2: только 3 задачи."""
+    prompt = f"""Тема: «{topic}» ({grade} класс).
+День {day_info['day']}: {day_info['title']}
+Цель: {day_info['goal']}
+
+Составь 3 задачи по этой теме.
+
+Формат ответа — строго JSON:
+{{
   "tasks": [
     {{"question": "Задача 1", "answer": "Ответ", "hint": "Подсказка"}},
     {{"question": "Задача 2", "answer": "Ответ", "hint": "Подсказка"}},
@@ -206,7 +246,7 @@ def build_day_content(topic: str, grade: int, day_info: dict) -> dict:
 }}
 
 Ровно 3 задачи. Все ответы точные.
-Ответь ТОЛЬКО валидным JSON."""
+Ответь ТОЛЬКО валидным JSON. Без лишнего текста."""
     return ai_json(prompt)
 
 
@@ -279,24 +319,37 @@ with st.sidebar:
                 full_days = []
                 total = len(outline.get("days", []))
                 for i, day_info in enumerate(outline.get("days", [])):
-                    pct = 15 + int(80 * (i + 1) / max(total, 1))
-                    progress.progress(pct, text=f"📝 День {day_info['day']}: {day_info['title']}")
-                    try:
-                        content = build_day_content(topic, grade, day_info)
-                    except Exception as day_err:
-                        content = {
-                            "theory": f"(не удалось: {day_err})",
-                            "example": "",
-                            "tasks": [],
-                        }
-                    full_days.append({
-                        "day": day_info["day"],
-                        "title": day_info["title"],
-                        "goal": day_info["goal"],
-                        "theory": content.get("theory", ""),
-                        "example": content.get("example", ""),
-                        "tasks": content.get("tasks", []),
-                    })
+    pct = 15 + int(80 * (i + 1) / max(total, 1))
+    progress.progress(pct, text=f"📝 День {day_info['day']}: {day_info['title']}")
+
+    # Часть 1: теория и пример
+    try:
+        theory_data = build_day_theory(topic, grade, day_info)
+        theory = theory_data.get("theory", "")
+        example = theory_data.get("example", "")
+    except Exception as e:
+        theory = f"(не удалось: {e})"
+        example = ""
+
+    time.sleep(0.3)
+
+    # Часть 2: задачи
+    try:
+        tasks_data = build_day_tasks(topic, grade, day_info)
+        tasks = tasks_data.get("tasks", [])
+    except Exception as e:
+        tasks = []
+
+    time.sleep(0.3)
+
+    full_days.append({
+        "day": day_info["day"],
+        "title": day_info["title"],
+        "goal": day_info["goal"],
+        "theory": theory,
+        "example": example,
+        "tasks": tasks,
+    })
                     time.sleep(2)
 
                 outline["days"] = full_days
