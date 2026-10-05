@@ -23,31 +23,40 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-    /* Скрыть главное меню (три точки) */
+    /* Скрыть меню (три точки) */
     #MainMenu {visibility: hidden;}
-
+    
     /* Скрыть футер "Made with Streamlit" */
     footer {visibility: hidden;}
-
-    /* Скрыть кнопку "Manage app" */
-    [data-testid="manage-app-button"] {display: none !important;}
-
-    /* Скрыть тулбар с Deploy/Record, но НЕ сайдбар */
+    
+    /* Скрыть тулбар (Deploy, Record) */
     [data-testid="stToolbar"] {display: none !important;}
-
+    
     /* Скрыть цветную полоску сверху */
     [data-testid="stDecoration"] {display: none !important;}
-
+    
     /* Скрыть индикатор "Running" */
     [data-testid="stStatusWidget"] {display: none !important;}
-
-    /* ВАЖНО: убедиться, что кнопка сайдбара видна */
-    [data-testid="collapsedControl"] {visibility: visible !important;}
-    [data-testid="stSidebarCollapsedControl"] {visibility: visible !important;}
-    button[kind="header"] {visibility: visible !important;}
+    
+    /* Скрыть кнопку "Manage app" */
+    [data-testid="manage-app-button"] {display: none !important;}
+    
+    /* ПРИНУДИТЕЛЬНО ПОКАЗАТЬ кнопку сайдбара (несколько вариантов селекторов) */
+    button[data-testid="stBaseButton-headerNoPadding"],
+    button[data-testid="stSidebarCollapseButton"],
+    [data-testid="collapsedControl"],
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="stSidebarCollapseButton"] {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        position: fixed !important;
+        top: 10px !important;
+        left: 10px !important;
+        z-index: 999999 !important;
+    }
     </style>
 """, unsafe_allow_html=True)
-
 
 # ============================================================
 # 2. ПОЛУЧЕНИЕ КЛЮЧЕЙ
