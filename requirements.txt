@@ -4,3 +4,4 @@ groq
 python-dotenv
 pandas
 pysqlite3-binary
+json-repair
