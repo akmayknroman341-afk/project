@@ -15,23 +15,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Скрываем меню, футер и кнопку Manage app
-hide_style = """
-    <style>
-    /* Скрыть главное меню (три точки) */
-    #MainMenu {visibility: hidden;}
-
-    /* Скрыть футер "Made with Streamlit" */
-    footer {visibility: hidden;}
-
-    /* Скрыть кнопку "Manage app" в правом нижнем углу */
-    [data-testid="manage-app-button"] {display: none !important;}
-
-    /* Скрыть значок Streamlit в шапке */
-    [data-testid="stHeader"] {background: rgba(0,0,0,0);}
-    </style>
-"""
-st.markdown(hide_style, unsafe_allow_html=True)
 # ============================================================
 # 1. КЛЮЧИ
 # ============================================================
