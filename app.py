@@ -20,7 +20,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
+st.set_option("client.showSidebarNavigation", False)
 st.markdown("""
     <style>
     /* Скрыть меню (три точки) */
