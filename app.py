@@ -15,6 +15,17 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+st.markdown("""
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    [data-testid="manage-app-button"] {display: none !important;}
+    [data-testid="stToolbar"] {display: none !important;}
+    [data-testid="stDecoration"] {display: none !important;}
+    [data-testid="stStatusWidget"] {display: none !important;}
+    </style>
+""", unsafe_allow_html=True)
 # ============================================================
 # 1. КЛЮЧИ
 # ============================================================
@@ -290,7 +301,7 @@ with st.sidebar:
 
     days = st.slider("Сколько дней в курсе", 3, 7, 3)
 
-    if st.button("🚀 Составить курс", type="primary"):
+        if st.button("🚀 Составить курс", type="primary"):
         if not topic.strip():
             st.error("Введи тему.")
         else:
@@ -302,38 +313,37 @@ with st.sidebar:
                 full_days = []
                 total = len(outline.get("days", []))
                 for i, day_info in enumerate(outline.get("days", [])):
-    pct = 15 + int(80 * (i + 1) / max(total, 1))
-    progress.progress(pct, text=f"📝 День {day_info['day']}: {day_info['title']}")
+                    pct = 15 + int(80 * (i + 1) / max(total, 1))
+                    progress.progress(pct, text=f"📝 День {day_info['day']}: {day_info['title']}")
 
-    # Часть 1: теория и пример
-    try:
-        theory_data = build_day_theory(topic, grade, day_info)
-        theory = theory_data.get("theory", "")
-        example = theory_data.get("example", "")
-    except Exception as e:
-        theory = f"(не удалось: {e})"
-        example = ""
+                    # Часть 1: теория и пример
+                    try:
+                        theory_data = build_day_theory(topic, grade, day_info)
+                        theory = theory_data.get("theory", "")
+                        example = theory_data.get("example", "")
+                    except Exception as e:
+                        theory = f"(не удалось: {e})"
+                        example = ""
 
-    time.sleep(0.3)
+                    time.sleep(0.3)
 
-    # Часть 2: задачи
-    try:
-        tasks_data = build_day_tasks(topic, grade, day_info)
-        tasks = tasks_data.get("tasks", [])
-    except Exception as e:
-        tasks = []
+                    # Часть 2: задачи
+                    try:
+                        tasks_data = build_day_tasks(topic, grade, day_info)
+                        tasks = tasks_data.get("tasks", [])
+                    except Exception as e:
+                        tasks = []
 
-    time.sleep(0.3)
+                    time.sleep(0.3)
 
-    full_days.append({
-        "day": day_info["day"],
-        "title": day_info["title"],
-        "goal": day_info["goal"],
-        "theory": theory,
-        "example": example,
-        "tasks": tasks,
-    })
-                    time.sleep(2)
+                    full_days.append({
+                        "day": day_info["day"],
+                        "title": day_info["title"],
+                        "goal": day_info["goal"],
+                        "theory": theory,
+                        "example": example,
+                        "tasks": tasks,
+                    })
 
                 outline["days"] = full_days
                 progress.progress(100, text="✅ Курс готов!")
@@ -347,7 +357,6 @@ with st.sidebar:
 
             except Exception as e:
                 st.error(f"Ошибка генерации: {e}")
-
     if st.button("📊 Моя статистика"):
         st.session_state.show_stats = True
 
