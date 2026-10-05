@@ -134,7 +134,7 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
         {"role": "assistant", "content": "```json\n{"},
     ],
     temperature=0.1,
-    max_tokens=800,          # было 4000 — увеличили для reasoning-моделей
+    max_tokens=950,          # было 4000 — увеличили для reasoning-моделей
     reasoning_effort="low",   # снижаем «размышления», больше бюджета на JSON
 )
             
