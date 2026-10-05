@@ -129,16 +129,17 @@ def ai_json(prompt: str, system: str = "Ты — опытный школьный
     for attempt in range(retries):
         try:
             response = client.chat.completions.create(
-                model=MODEL,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt},
-                    {"role": "assistant", "content": "```json\n{"},
-                ],
-                temperature=0.1,
-                max_tokens=950,
-                reasoning_effort="low",
-            )
+    model=MODEL,
+    messages=[
+        {"role": "system", "content": system},
+        {"role": "user", "content": prompt},
+        {"role": "assistant", "content": "```json\n{"},
+    ],
+    temperature=0.1,
+    max_tokens=950,
+    reasoning_effort="low",
+    timeout=30,   # ← добавь это. Если Groq молчит 30 секунд — упадём с ошибкой, а не будем висеть
+)
 
             if response.choices[0].finish_reason == "length":
                 raise ValueError("Ответ оборвался (max_tokens).")
@@ -343,19 +344,55 @@ with st.sidebar:
     days = st.slider("Сколько дней в курсе", 3, 14, 7)
 
     if st.button("🚀 Составить курс", type="primary"):
-        if not topic.strip():
-            st.error("Введи тему.")
-        else:
-            with st.spinner("Нейросеть составляет план курса..."):
+    if not topic.strip():
+        st.error("Введи тему.")
+    else:
+        progress = st.progress(0, text="📋 Готовим оглавление курса...")
+
+        try:
+            # Шаг 1: оглавление
+            outline = build_outline(topic, grade, days)
+            progress.progress(15, text="📋 Оглавление готово. Заполняем дни...")
+
+            # Шаг 2: каждый день отдельно
+            full_days = []
+            total = len(outline.get("days", []))
+            for i, day_info in enumerate(outline.get("days", [])):
+                pct = 15 + int(80 * (i + 1) / total)
+                progress.progress(
+                    pct,
+                    text=f"📝 День {day_info['day']}: {day_info['title']}..."
+                )
                 try:
-                    plan = build_plan(topic, grade, days)
-                    save_course(student, topic, plan)
-                    st.session_state.plan = plan
-                    st.session_state.topic = topic
-                    st.session_state.mistakes = []
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Ошибка генерации: {e}")
+                    content = build_day_content(topic, grade, day_info)
+                except Exception as day_err:
+                    content = {
+                        "theory": f"(не удалось сгенерировать: {day_err})",
+                        "example": "",
+                        "tasks": [],
+                    }
+                full_days.append({
+                    "day": day_info["day"],
+                    "title": day_info["title"],
+                    "goal": day_info["goal"],
+                    "theory": content.get("theory", ""),
+                    "example": content.get("example", ""),
+                    "tasks": content.get("tasks", []),
+                })
+                time.sleep(2)
+
+            outline["days"] = full_days
+            progress.progress(100, text="✅ Курс готов!")
+
+            save_course(student, topic, outline)
+            st.session_state.plan = outline
+            st.session_state.topic = topic
+            st.session_state.mistakes = []
+            time.sleep(0.5)
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"Ошибка генерации: {e}")
 
     if st.button("📊 Моя статистика"):
         st.session_state.show_stats = True
